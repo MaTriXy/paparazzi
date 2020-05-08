@@ -43,12 +43,15 @@ import org.junit.rules.TestRule
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
 import java.awt.image.BufferedImage
+import java.lang.reflect.Field
+import java.lang.reflect.Modifier
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
 class Paparazzi(
   private val environment: Environment = detectEnvironment(),
   private val deviceConfig: DeviceConfig = DeviceConfig.NEXUS_5,
+  private val theme: String = "android:Theme.Material.NoActionBar.Fullscreen",
   private val snapshotHandler: SnapshotHandler = HtmlReportWriter()
 ) : TestRule {
   private val THUMBNAIL_SIZE = 1000
@@ -92,6 +95,8 @@ class Paparazzi(
   }
 
   fun prepare(description: Description) {
+    forcePlatformSdkVersion(environment.compileSdkVersion)
+
     val layoutlibCallback = PaparazziCallback(logger, environment.packageName)
     layoutlibCallback.initResources()
 
@@ -106,7 +111,7 @@ class Paparazzi(
             deviceConfig = deviceConfig,
             renderingMode = SessionParams.RenderingMode.V_SCROLL
         )
-        .withTheme("Theme.Material.NoActionBar.Fullscreen", false)
+        .withTheme(theme)
 
     val sessionParams = sessionParamsBuilder.build()
     renderSession = RenderSessionImpl(sessionParams)
@@ -129,15 +134,17 @@ class Paparazzi(
   fun snapshot(
     view: View,
     name: String? = null,
-    deviceConfig: DeviceConfig? = null
+    deviceConfig: DeviceConfig? = null,
+    theme: String? = null
   ) {
-    takeSnapshots(view, name, deviceConfig, 0, -1, 1)
+    takeSnapshots(view, name, deviceConfig, theme, 0, -1, 1)
   }
 
   fun gif(
     view: View,
     name: String? = null,
     deviceConfig: DeviceConfig? = null,
+    theme: String? = null,
     start: Long = 0L,
     end: Long = 500L,
     fps: Int = 30
@@ -148,27 +155,36 @@ class Paparazzi(
     val durationMillis = (end - start).toInt()
     val frameCount = (durationMillis * fps) / 1000 + 1
     val startNanos = TimeUnit.MILLISECONDS.toNanos(start)
-    takeSnapshots(view, name, deviceConfig, startNanos, fps, frameCount)
+    takeSnapshots(view, name, deviceConfig, theme, startNanos, fps, frameCount)
   }
 
   private fun takeSnapshots(
     view: View,
     name: String?,
     deviceConfig: DeviceConfig? = null,
+    theme: String? = null,
     startNanos: Long,
     fps: Int,
     frameCount: Int
   ) {
-    if (deviceConfig != null) {
+    if (deviceConfig != null || theme != null) {
       renderSession.release()
       bridgeRenderSession.dispose()
 
       sessionParamsBuilder = sessionParamsBuilder
           .copy(
               // Required to reset underlying parser stream
-              layoutPullParser = LayoutPullParser.createFromString(contentRoot),
-              deviceConfig = deviceConfig
+              layoutPullParser = LayoutPullParser.createFromString(contentRoot)
           )
+
+      if (deviceConfig != null) {
+        sessionParamsBuilder = sessionParamsBuilder.copy(deviceConfig = deviceConfig)
+      }
+
+      if (theme != null) {
+        sessionParamsBuilder = sessionParamsBuilder.withTheme(theme)
+      }
+
       val sessionParams = sessionParamsBuilder.build()
       renderSession = RenderSessionImpl(sessionParams)
       renderSession.init(sessionParams.timeout)
@@ -200,7 +216,10 @@ class Paparazzi(
     }
   }
 
-  private fun withTime(timeNanos: Long, block: () -> Unit) {
+  private fun withTime(
+    timeNanos: Long,
+    block: () -> Unit
+  ) {
     val frameNanos = TIME_OFFSET_NANOS + timeNanos
 
     // Execute the block at the requested time.
@@ -242,6 +261,27 @@ class Paparazzi(
     val packageName = testClass.`package`.name
     val className = testClass.name.substring(packageName.length + 1)
     return TestName(packageName, className, methodName)
+  }
+
+  private fun forcePlatformSdkVersion(compileSdkVersion: Int) {
+    val modifiersField: Field = Field::class.java
+        .getDeclaredField("modifiers")
+        .apply {
+          isAccessible = true
+        }
+
+    val versionClass = try {
+      Paparazzi::class.java.classLoader.loadClass("android.os.Build\$VERSION")
+    } catch (e: ClassNotFoundException) {
+      return
+    }
+
+    versionClass
+        .getDeclaredField("SDK_INT")
+        .apply {
+          modifiersField.setInt(this, modifiers and Modifier.FINAL.inv())
+          setInt(null, compileSdkVersion)
+        }
   }
 
   companion object {

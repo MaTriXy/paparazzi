@@ -23,9 +23,9 @@ data class Environment(
   val platformDir: String,
   val appTestDir: String,
   val resDir: String,
-  val packageName: String
+  val packageName: String,
+  val compileSdkVersion: Int
 ) {
-  val testResDir: String = "$appTestDir/app/build/intermediates/classes/production/release/"
   val assetsDir = "$appTestDir/src/main/assets/"
 }
 
@@ -34,7 +34,9 @@ fun detectEnvironment(): Environment {
 
   val userDir = System.getProperty("user.dir")
   val userHome = System.getProperty("user.home")
-  val androidHome = System.getenv("ANDROID_HOME") ?: "$userHome/Library/Android/sdk"
+  val androidHome = System.getenv("ANDROID_SDK_ROOT")
+      ?: System.getenv("ANDROID_HOME")
+      ?: "$userHome/Library/Android/sdk"
   val platformDir = Files.list(Paths.get("$androidHome/platforms"))
       .filter { Files.isDirectory(it) }
       .map { it.toString() }
@@ -45,8 +47,9 @@ fun detectEnvironment(): Environment {
   val configLines = File("build/intermediates/paparazzi/resources.txt").readLines()
   val packageName = configLines[0]
   val resDir = configLines[1]
+  val compileSdkVersion = configLines[2].toInt()
 
-  return Environment(platformDir, userDir, resDir, packageName)
+  return Environment(platformDir, userDir, resDir, packageName, compileSdkVersion)
 }
 
 private fun checkInstalledJvm() {
