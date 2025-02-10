@@ -25,17 +25,17 @@ import org.junit.Test
 
 class VectorDrawableTest {
   @get:Rule
-  var paparazzi = Paparazzi()
+  val paparazzi = Paparazzi()
 
   @Test
   fun vectorDrawable() {
     val imageView = AppCompatImageView(paparazzi.context).apply {
       layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
-          .apply {
-            gravity = CENTER
-            height = 400
-            width = 400
-          }
+        .apply {
+          gravity = CENTER
+          height = 400
+          width = 400
+        }
       setImageResource(R.drawable.arrow_up)
     }
     paparazzi.snapshot(imageView, "arrow up")

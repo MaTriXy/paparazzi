@@ -16,42 +16,42 @@
 package app.cash.paparazzi.sample
 
 import android.widget.LinearLayout
-import app.cash.paparazzi.Paparazzi
 import app.cash.paparazzi.DeviceConfig.Companion.NEXUS_5
-import app.cash.paparazzi.DeviceConfig.Companion.NEXUS_5_LAND
-import app.cash.paparazzi.DeviceConfig.Companion.NEXUS_7
+import app.cash.paparazzi.DeviceConfig.Companion.PIXEL_3
+import app.cash.paparazzi.Paparazzi
+import com.android.resources.ScreenOrientation.LANDSCAPE
 import org.junit.Rule
 import org.junit.Test
 
 class LaunchViewTest {
   @get:Rule
-  var paparazzi = Paparazzi(deviceConfig = NEXUS_7)
+  val paparazzi = Paparazzi(deviceConfig = PIXEL_3)
 
   @Test
-  fun nexus7() {
+  fun pixel3() {
     val launch = paparazzi.inflate<LinearLayout>(R.layout.launch)
-    paparazzi.snapshot(launch, "launch nexus7")
+    paparazzi.snapshot(launch)
+  }
+
+  @Test
+  fun pixel3_differentThemes() {
+    paparazzi.unsafeUpdateConfig(theme = "android:Theme.Material.Light")
+    var launch = paparazzi.inflate<LinearLayout>(R.layout.launch)
+    paparazzi.snapshot(view = launch, name = "light")
+
+    paparazzi.unsafeUpdateConfig(theme = "android:Theme.Material.Light.NoActionBar")
+    launch = paparazzi.inflate(R.layout.launch)
+    paparazzi.snapshot(view = launch, name = "light no_action_bar")
   }
 
   @Test
   fun nexus5_differentOrientations() {
-    val launch = paparazzi.inflate<LinearLayout>(R.layout.launch)
-    paparazzi.snapshot(launch, "launch nexus 5 portrait", deviceConfig = NEXUS_5)
-    paparazzi.snapshot(launch, "launch nexus 5 landscape", deviceConfig = NEXUS_5_LAND)
-  }
+    paparazzi.unsafeUpdateConfig(deviceConfig = NEXUS_5)
+    var launch = paparazzi.inflate<LinearLayout>(R.layout.launch)
+    paparazzi.snapshot(launch, "portrait")
 
-  @Test
-  fun nexus7_differentThemes() {
-    val launch = paparazzi.inflate<LinearLayout>(R.layout.launch)
-    paparazzi.snapshot(
-        view = launch,
-        name = "launch nexus 7 light",
-        theme = "android:Theme.Material.Light"
-    )
-    paparazzi.snapshot(
-        view = launch,
-        name = "launch nexus 7 light no-action-bar",
-        theme = "android:Theme.Material.Light.NoActionBar"
-    )
+    paparazzi.unsafeUpdateConfig(deviceConfig = NEXUS_5.copy(orientation = LANDSCAPE))
+    launch = paparazzi.inflate(R.layout.launch)
+    paparazzi.snapshot(launch, "landscape")
   }
 }

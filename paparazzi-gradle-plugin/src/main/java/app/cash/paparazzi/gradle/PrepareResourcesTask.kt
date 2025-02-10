@@ -15,87 +15,94 @@
  */
 package app.cash.paparazzi.gradle
 
-import com.android.build.gradle.BaseExtension
-import com.android.build.gradle.tasks.MergeResources
-import com.android.Version
-import com.android.ide.common.symbols.getPackageNameFromManifest
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import org.gradle.api.DefaultTask
-import org.gradle.api.Project
-import org.gradle.api.file.Directory
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.Internal
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
-import org.gradle.api.tasks.TaskProvider
-import org.gradle.util.VersionNumber
-import java.io.File
 
-open class PrepareResourcesTask : DefaultTask() {
-  // Replace with @InputDirectory once mergeResourcesProvider.outputDir is of type Provider<File>.
+@CacheableTask
+public abstract class PrepareResourcesTask : DefaultTask() {
+  @get:Input
+  public abstract val packageName: Property<String>
 
-  internal lateinit var mergeResourcesProvider: TaskProvider<MergeResources>
-    @Internal get
+  @get:Input
+  public abstract val targetSdkVersion: Property<String>
 
-  internal var outputDir: Provider<Directory> = project.objects.directoryProperty()
-    @Internal get
+  @get:Input
+  public abstract val projectResourceDirs: ListProperty<String>
+
+  @get:Input
+  public abstract val moduleResourceDirs: ListProperty<String>
+
+  @get:Input
+  public abstract val aarExplodedDirs: ListProperty<String>
+
+  @get:Input
+  public abstract val projectAssetDirs: ListProperty<String>
+
+  @get:Input
+  public abstract val aarAssetDirs: ListProperty<String>
+
+  @get:Input
+  public abstract val nonTransitiveRClassEnabled: Property<Boolean>
+
+  @get:InputFiles
+  @get:PathSensitive(PathSensitivity.NONE)
+  public abstract val artifactFiles: ConfigurableFileCollection
+
+  @get:OutputFile
+  public abstract val paparazziResources: RegularFileProperty
 
   @TaskAction
-  fun writeResourcesFile() {
-    val out = outputDir.get().asFile
+  public fun writeResourcesFile() {
+    val out = paparazziResources.get().asFile
     out.delete()
-    out.bufferedWriter()
-        .use {
-          it.write(project.packageName())
-          it.newLine()
-          it.write(mergeResourcesProvider.get().outputDirAsFile().path)
-          it.newLine()
-          it.write(project.compileSdkVersion())
+
+    val mainPackage = packageName.get()
+    val resourcePackageNames = if (nonTransitiveRClassEnabled.get()) {
+      buildList {
+        add(mainPackage)
+        artifactFiles.files.forEach { file ->
+          add(file.useLines { lines -> lines.first() })
         }
-  }
-
-  /**
-   * In AGP 3.6 the return type of MergeResources#getOutputDir() was changed from File to
-   * DirectoryProperty. Here we use reflection in order to support users that have not upgraded to
-   * 3.6 yet.
-   */
-  private fun MergeResources.outputDirAsFile(): File {
-    val getOutputDir = this::class.java.getDeclaredMethod("getOutputDir")
-
-    return if (agpVersion() < VersionNumber.parse("3.6.0")) {
-      getOutputDir.invoke(this) as File
-    } else {
-      (getOutputDir.invoke(this) as DirectoryProperty).asFile.get()
-    }
-  }
-
-  private fun agpVersion() = VersionNumber.parse(
-      try {
-        Version.ANDROID_GRADLE_PLUGIN_VERSION
-      } catch (e: NoClassDefFoundError) {
-        @Suppress("DEPRECATION")
-        com.android.builder.model.Version.ANDROID_GRADLE_PLUGIN_VERSION
       }
-  )
+    } else {
+      listOf(mainPackage)
+    }
 
-  private fun Project.packageName(): String {
-    val androidExtension = extensions.getByType(BaseExtension::class.java)
-    androidExtension.sourceSets
-        .map { it.manifest.srcFile }
-        .filter { it.exists() }
-        .forEach {
-          return getPackageNameFromManifest(it)
-        }
-    throw IllegalStateException("No source sets available")
-  }
-
-  private fun Project.compileSdkVersion(): String {
-    val androidExtension = extensions.getByType(BaseExtension::class.java)
-    return androidExtension.compileSdkVersion.substringAfter(
-        "android-", DEFAULT_COMPILE_SDK_VERSION.toString()
+    val config = Config(
+      mainPackage = mainPackage,
+      targetSdkVersion = targetSdkVersion.get(),
+      resourcePackageNames = resourcePackageNames,
+      projectResourceDirs = projectResourceDirs.get(),
+      moduleResourceDirs = moduleResourceDirs.get(),
+      aarExplodedDirs = aarExplodedDirs.get(),
+      projectAssetDirs = projectAssetDirs.get(),
+      aarAssetDirs = aarAssetDirs.get()
     )
+    val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()!!
+    val json = moshi.adapter(Config::class.java).indent("  ").toJson(config)
+    out.writeText(json)
   }
 
-  companion object {
-    const val DEFAULT_COMPILE_SDK_VERSION = 28
-  }
+  internal data class Config(
+    val mainPackage: String,
+    val targetSdkVersion: String,
+    val resourcePackageNames: List<String>,
+    val projectResourceDirs: List<String>,
+    val moduleResourceDirs: List<String>,
+    val aarExplodedDirs: List<String>,
+    val projectAssetDirs: List<String>,
+    val aarAssetDirs: List<String>
+  )
 }
